@@ -1,57 +1,5 @@
 {
   "global": {
-    "bc_environment": "production",
-    "bc_oauth_scope": "https://api.businesscentral.dynamics.com/.default",
-    "bc_api_version": "v2.0",
-    "metadata_catalog": "main",
-    "metadata_schema": "business_central",
-    "max_retries": 5,
-    "retry_backoff_seconds": 2,
-    "request_timeout_seconds": 60
-  },
-  "step0_discovery": {
-    "bc_tenant_id": "",
-    "bc_company_id": "",
-    "bc_client_id": "",
-    "bc_client_secret": "",
-    "include_pattern": "",
-    "exclude_pattern": "",
-    "selected_entities_csv": ""
-  },
-  "step1_ingest": {
-    "bc_tenant_id": "",
-    "bc_company_id": "",
-    "bc_client_id": "",
-    "bc_client_secret": "",
-    "raw_volume_path": "/Volumes/main/business_central/bc_raw/raw",
-    "entities": [
-      "customers",
-      "items",
-      "salesOrders"
-    ],
-    "page_size": 1000,
-    "initial_load_start_utc": ""
-  },
-  "step2_load": {
-    "target_catalog": "main",
-    "target_schema": "business_central",
-    "metadata_catalog": "main",
-    "metadata_schema": "business_central",
-    "primary_key_map_json": {
-      "*": [
-        "id"
-      ],
-      "salesOrders": [
-        "id"
-      ]
-    },
-    "source_system_name": "dynamics365_business_central",
-    "run_id_filter": "",
-    "max_runs_per_entity": 100
-  }
-}
-{
-  "global": {
     "bc_tenant_id": "00000000-0000-0000-0000-000000000000",
     "bc_environment": "production",
     "bc_company_id": "00000000-0000-0000-0000-000000000000",
