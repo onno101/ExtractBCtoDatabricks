@@ -21,6 +21,19 @@ Notebook paths:
 - Step 2 updates manifest load status and load watermark tables
 - Both steps include retries and per-entity error isolation
 
+## Architecture Diagram
+
+```mermaid
+flowchart LR
+    businessCentral["Dynamics365BusinessCentral"] --> step1["AzureDatabricksCompute Step1ExtractNotebook"]
+    step1 --> rawStorage["AzureDataLakeServices RawJsonZone UCVolume"]
+    step1 --> metadata["UnityCatalogMetadataTables ExtractWatermarkAndManifest"]
+    metadata --> step2["AzureDatabricksCompute Step2TransformLoadNotebook"]
+    rawStorage --> step2
+    step2 --> managedTables["UnityCatalogManagedDeltaTables CuratedBusinessCentral"]
+    step2 --> loadMetadata["UnityCatalogMetadataTables LoadWatermarkAndStatus"]
+```
+
 ## Target Tables
 
 For each entity in `entities`, the notebook writes to:
