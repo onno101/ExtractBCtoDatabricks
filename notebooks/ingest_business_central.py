@@ -46,6 +46,7 @@ class ExtractConfig:
     raw_volume_path: str
     metadata_catalog: str
     metadata_schema: str
+    entities_config_file_path: str
     entities: List[str]
     page_size: int
     request_timeout_seconds: int
@@ -129,6 +130,11 @@ def load_config() -> ExtractConfig:
         "config/pipeline_config.json",
     )
     file_cfg = _load_json_config(config_file_path)
+    entities_config_file_path = _get_widget_or_default(
+        "entities_config_file_path",
+        str(_cfg_value(file_cfg, "step1_ingest", "entities_config_file_path", "config/entities_config.json")),
+    )
+    entities_cfg = _load_json_config(entities_config_file_path)
 
     tenant_id = _get_widget_or_default("bc_tenant_id", str(_cfg_value(file_cfg, "step1_ingest", "bc_tenant_id", "")))
     environment = _get_widget_or_default(
@@ -166,7 +172,10 @@ def load_config() -> ExtractConfig:
         "metadata_schema", str(_cfg_value(file_cfg, "step1_ingest", "metadata_schema", "business_central"))
     )
 
-    default_entities = _cfg_value(file_cfg, "step1_ingest", "entities", ["customers", "items", "salesOrders"])
+    default_entities = entities_cfg.get(
+        "entities",
+        _cfg_value(file_cfg, "step1_ingest", "entities", ["customers", "items", "salesOrders"]),
+    )
     entities = _parse_entities(_get_widget_or_default("entities", json.dumps(default_entities)))
     page_size = int(_get_widget_or_default("page_size", str(_cfg_value(file_cfg, "step1_ingest", "page_size", 1000))))
     request_timeout_seconds = int(
@@ -207,6 +216,7 @@ def load_config() -> ExtractConfig:
         raw_volume_path=raw_volume_path,
         metadata_catalog=metadata_catalog,
         metadata_schema=metadata_schema,
+        entities_config_file_path=entities_config_file_path,
         entities=entities,
         page_size=page_size,
         request_timeout_seconds=request_timeout_seconds,

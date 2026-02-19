@@ -1,4 +1,4 @@
-# Business Central to Databricks Incremental Ingestion (2 Notebooks)
+# Business Central to Databricks Incremental Ingestion (3 Notebooks)
 
 This project contains three Databricks notebooks that ingest data from Dynamics 365
 Business Central (BC) into Unity Catalog managed Delta tables using a two-step,
@@ -73,6 +73,7 @@ Per entity and run, files are written under:
 Set these in Databricks before running:
 
 - `config_file_path` (default: `config/pipeline_config.json`)
+- `entities_config_file_path` (default: `config/entities_config.json`)
 - `bc_tenant_id` (required)
 - `bc_environment` (default: `production`)
 - `bc_company_id` (required)
@@ -86,7 +87,7 @@ Recommended optional widgets:
 - `metadata_catalog` (default: `main`)
 - `metadata_schema` (default: `business_central`)
 - `raw_volume_path` (default: `/Volumes/main/business_central/bc_raw/raw`)
-- `entities` (JSON or CSV; default: `["customers","items","salesOrders"]`)
+- `entities` (JSON or CSV override; default comes from `config/entities_config.json`)
 - `page_size` (default: `1000`)
 - `request_timeout_seconds` (default: `60`)
 - `max_retries` (default: `5`)
@@ -96,6 +97,7 @@ Recommended optional widgets:
 ## Widgets - Step 0 (`discover_business_central_entities.py`)
 
 - `config_file_path` (default: `config/pipeline_config.json`)
+- `entities_config_file_path` (default: `config/entities_config.json`)
 - `bc_tenant_id` (required)
 - `bc_environment` (default: `production`)
 - `bc_company_id` (required)
@@ -108,15 +110,17 @@ Recommended optional widgets:
 - `include_pattern` (optional regex include filter, e.g. `customer|item`)
 - `exclude_pattern` (optional regex exclude filter, e.g. `attachments|pictures`)
 - `selected_entities_csv` (optional explicit list, e.g. `customers,items,salesOrders`)
+- `write_entities_config` (default: `true`, writes discovered selection to `entities_config_file_path`)
 
 ## Widgets - Step 2 (`load_business_central_raw_to_uc.py`)
 
 - `config_file_path` (default: `config/pipeline_config.json`)
+- `entities_config_file_path` (default: `config/entities_config.json`)
 - `target_catalog` (default: `main`)
 - `target_schema` (default: `business_central`)
 - `metadata_catalog` (default: `main`)
 - `metadata_schema` (default: `business_central`)
-- `primary_key_map_json` (default: `{"*":["id"]}`)
+- `primary_key_map_json` (JSON override; default comes from `config/entities_config.json`)
 - `source_system_name` (default: `dynamics365_business_central`)
 - `run_id_filter` (optional, load only one run)
 - `max_runs_per_entity` (default: `100`)
@@ -131,7 +135,7 @@ bc_environment = "production"
 bc_company_id = "00000000-0000-0000-0000-000000000000"
 bc_client_id = "00000000-0000-0000-0000-000000000000"
 bc_client_secret = "<secret>"
-entities = '["customers","items","salesOrders"]'
+entities_config_file_path = "config/entities_config.json"
 metadata_catalog = "main"
 metadata_schema = "business_central"
 raw_volume_path = "/Volumes/main/business_central/bc_raw/raw"
@@ -144,24 +148,31 @@ target_catalog = "main"
 target_schema = "business_central"
 metadata_catalog = "main"
 metadata_schema = "business_central"
-primary_key_map_json = '{"*":["id"],"salesOrders":["id"]}'
+entities_config_file_path = "config/entities_config.json"
 run_id_filter = ""  # optional
 ```
 
 ## Central Config File
 
-The pipeline now supports a shared config file:
+The pipeline supports two config files:
 
 - `config/pipeline_config.json`
+- `config/entities_config.json`
 
-Each notebook reads this file first, then applies widget values as overrides.
-That means you can keep environment settings in one place and still override a
-single value at runtime (for example `run_id_filter` in Step 2).
+- `pipeline_config.json` stores runtime/env settings (credentials, catalogs, retries, etc.).
+- `entities_config.json` stores ingestion scope:
+  - `entities`
+  - `primary_key_map_json`
+
+Step 0 can auto-populate `entities_config.json` with all discovered entities (or filtered selection)
+when `write_entities_config=true`.
+
+Each notebook reads config files first, then applies widget values as overrides.
 
 ## Run Order / Scheduling
 
 1. Run `notebooks/discover_business_central_entities.py` (Step 0)
-2. Copy returned JSON string to Step 1 widget `entities`
+2. (Optional) Verify/update `config/entities_config.json`
 3. Run `notebooks/ingest_business_central.py` (Step 1)
 4. Run `notebooks/load_business_central_raw_to_uc.py` (Step 2)
 

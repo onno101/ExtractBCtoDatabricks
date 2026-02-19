@@ -1,0 +1,16 @@
+{
+  "entities": [
+    "customers",
+    "items",
+    "salesOrders"
+  ],
+  "primary_key_map_json": {
+    "*": [
+      "id"
+    ],
+    "salesOrders": [
+      "id"
+    ]
+  }
+}
+

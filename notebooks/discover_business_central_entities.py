@@ -36,6 +36,8 @@ class DiscoveryConfig:
     api_version: str
     metadata_catalog: str
     metadata_schema: str
+    entities_config_file_path: str
+    write_entities_config: bool
     include_pattern: Optional[str]
     exclude_pattern: Optional[str]
     selected_entities_csv: Optional[str]
@@ -57,6 +59,17 @@ def _parse_csv(raw: Optional[str]) -> List[str]:
     if not raw:
         return []
     return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def _parse_bool(raw: Any, default: bool = False) -> bool:
+    if raw is None:
+        return default
+    text = str(raw).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def _load_json_config(config_file_path: str) -> Dict[str, Any]:
@@ -121,6 +134,16 @@ def load_config() -> DiscoveryConfig:
     metadata_schema = _get_widget_or_default(
         "metadata_schema", str(_cfg_value(file_cfg, "step0_discovery", "metadata_schema", "business_central"))
     )
+    entities_config_file_path = _get_widget_or_default(
+        "entities_config_file_path",
+        str(_cfg_value(file_cfg, "step0_discovery", "entities_config_file_path", "config/entities_config.json")),
+    )
+    write_entities_config = _parse_bool(
+        _get_widget_or_default(
+            "write_entities_config", str(_cfg_value(file_cfg, "step0_discovery", "write_entities_config", "true"))
+        ),
+        default=True,
+    )
 
     include_pattern = _get_widget_or_default(
         "include_pattern", str(_cfg_value(file_cfg, "step0_discovery", "include_pattern", ""))
@@ -166,6 +189,8 @@ def load_config() -> DiscoveryConfig:
         api_version=api_version,
         metadata_catalog=metadata_catalog,
         metadata_schema=metadata_schema,
+        entities_config_file_path=entities_config_file_path,
+        write_entities_config=write_entities_config,
         include_pattern=include_pattern,
         exclude_pattern=exclude_pattern,
         selected_entities_csv=selected_entities_csv,
@@ -341,6 +366,29 @@ def persist_entity_catalog(
     df.write.mode("append").saveAsTable(_entity_catalog_table(config))
 
 
+def write_entities_config_file(config: DiscoveryConfig, selected_entities: List[str]) -> None:
+    """
+    Write selected entities to the dedicated entities config file.
+
+    Keeps existing primary key map if present; otherwise initializes wildcard id mapping.
+    """
+    existing = _load_json_config(config.entities_config_file_path)
+    payload = {
+        "entities": selected_entities,
+        "primary_key_map_json": existing.get("primary_key_map_json", {"*": ["id"]}),
+    }
+
+    serialized = json.dumps(payload, indent=2)
+    if config.entities_config_file_path.startswith("dbfs:/"):
+        dbutils.fs.put(config.entities_config_file_path, serialized, True)
+    else:
+        expanded = os.path.expanduser(config.entities_config_file_path)
+        parent = os.path.dirname(expanded) or "."
+        os.makedirs(parent, exist_ok=True)
+        with open(expanded, "w", encoding="utf-8") as handle:
+            handle.write(serialized + "\n")
+
+
 # COMMAND ----------
 ensure_metadata_objects(cfg)
 
@@ -357,6 +405,9 @@ filtered_entities = apply_filters(all_entities, cfg.include_pattern, cfg.exclude
 selected_entities = build_selection(filtered_entities, cfg.selected_entities_csv)
 
 persist_entity_catalog(cfg, filtered_entities, selected_entities)
+if cfg.write_entities_config:
+    write_entities_config_file(cfg, selected_entities)
+    print(f"Updated entities config file: {cfg.entities_config_file_path}")
 
 summary_rows = [
     ("total_discovered", len(all_entities)),

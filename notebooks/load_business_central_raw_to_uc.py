@@ -40,6 +40,7 @@ class LoadConfig:
     target_schema: str
     metadata_catalog: str
     metadata_schema: str
+    entities_config_file_path: str
     primary_key_map: Dict[str, List[str]]
     source_system_name: str
     run_id_filter: Optional[str]
@@ -112,6 +113,11 @@ def load_config() -> LoadConfig:
         "config/pipeline_config.json",
     )
     file_cfg = _load_json_config(config_file_path)
+    entities_config_file_path = _get_widget_or_default(
+        "entities_config_file_path",
+        str(_cfg_value(file_cfg, "step2_load", "entities_config_file_path", "config/entities_config.json")),
+    )
+    entities_cfg = _load_json_config(entities_config_file_path)
 
     target_catalog = _get_widget_or_default(
         "target_catalog", str(_cfg_value(file_cfg, "step2_load", "target_catalog", "main"))
@@ -137,7 +143,10 @@ def load_config() -> LoadConfig:
             "max_runs_per_entity", str(_cfg_value(file_cfg, "step2_load", "max_runs_per_entity", 100))
         )
     )
-    default_pk_map = _cfg_value(file_cfg, "step2_load", "primary_key_map_json", {"*": ["id"]})
+    default_pk_map = entities_cfg.get(
+        "primary_key_map_json",
+        _cfg_value(file_cfg, "step2_load", "primary_key_map_json", {"*": ["id"]}),
+    )
     primary_key_map = _parse_primary_key_map(
         _get_widget_or_default("primary_key_map_json", json.dumps(default_pk_map))
     )
@@ -147,6 +156,7 @@ def load_config() -> LoadConfig:
         target_schema=target_schema,
         metadata_catalog=metadata_catalog,
         metadata_schema=metadata_schema,
+        entities_config_file_path=entities_config_file_path,
         primary_key_map=primary_key_map,
         source_system_name=source_system_name,
         run_id_filter=run_id_filter,
