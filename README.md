@@ -1,6 +1,6 @@
 # Business Central to Databricks Incremental Ingestion (2 Notebooks)
 
-This project contains two Databricks notebooks that ingest data from Dynamics 365
+This project contains three Databricks notebooks that ingest data from Dynamics 365
 Business Central (BC) into Unity Catalog managed Delta tables using a two-step,
 incremental pattern:
 
@@ -9,11 +9,13 @@ incremental pattern:
 
 Notebook paths:
 
+- `notebooks/discover_business_central_entities.py` (Step 0: discover entities and build selection list)
 - `notebooks/ingest_business_central.py` (Step 1: BC -> raw JSON in UC Volume)
 - `notebooks/load_business_central_raw_to_uc.py` (Step 2: raw JSON -> UC managed tables)
 
 ## What It Does
 
+- Step 0 discovers available BC entities and returns a ready-to-use `entities` JSON list
 - Step 1 authenticates to BC via OAuth2 client credentials
 - Step 1 extracts incremental data per entity and writes raw JSON by `run_id`
 - Step 1 tracks extraction watermark and creates manifest rows with `load_status=PENDING`
@@ -70,6 +72,7 @@ Per entity and run, files are written under:
 
 Set these in Databricks before running:
 
+- `config_file_path` (default: `config/pipeline_config.json`)
 - `bc_tenant_id` (required)
 - `bc_environment` (default: `production`)
 - `bc_company_id` (required)
@@ -90,8 +93,25 @@ Recommended optional widgets:
 - `retry_backoff_seconds` (default: `2`)
 - `initial_load_start_utc` (optional ISO datetime for first load)
 
+## Widgets - Step 0 (`discover_business_central_entities.py`)
+
+- `config_file_path` (default: `config/pipeline_config.json`)
+- `bc_tenant_id` (required)
+- `bc_environment` (default: `production`)
+- `bc_company_id` (required)
+- `bc_client_id` (required)
+- `bc_client_secret` (required)
+- `bc_oauth_scope` (default: `https://api.businesscentral.dynamics.com/.default`)
+- `bc_api_version` (default: `v2.0`)
+- `metadata_catalog` (default: `main`)
+- `metadata_schema` (default: `business_central`)
+- `include_pattern` (optional regex include filter, e.g. `customer|item`)
+- `exclude_pattern` (optional regex exclude filter, e.g. `attachments|pictures`)
+- `selected_entities_csv` (optional explicit list, e.g. `customers,items,salesOrders`)
+
 ## Widgets - Step 2 (`load_business_central_raw_to_uc.py`)
 
+- `config_file_path` (default: `config/pipeline_config.json`)
 - `target_catalog` (default: `main`)
 - `target_schema` (default: `business_central`)
 - `metadata_catalog` (default: `main`)
@@ -128,10 +148,22 @@ primary_key_map_json = '{"*":["id"],"salesOrders":["id"]}'
 run_id_filter = ""  # optional
 ```
 
+## Central Config File
+
+The pipeline now supports a shared config file:
+
+- `config/pipeline_config.json`
+
+Each notebook reads this file first, then applies widget values as overrides.
+That means you can keep environment settings in one place and still override a
+single value at runtime (for example `run_id_filter` in Step 2).
+
 ## Run Order / Scheduling
 
-1. Run `notebooks/ingest_business_central.py` (Step 1)
-2. Run `notebooks/load_business_central_raw_to_uc.py` (Step 2)
+1. Run `notebooks/discover_business_central_entities.py` (Step 0)
+2. Copy returned JSON string to Step 1 widget `entities`
+3. Run `notebooks/ingest_business_central.py` (Step 1)
+4. Run `notebooks/load_business_central_raw_to_uc.py` (Step 2)
 
 For production, schedule both notebooks in one Databricks Workflow with Step 2
 depending on Step 1 success.

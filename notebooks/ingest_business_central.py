@@ -10,6 +10,7 @@
 # Standard library imports for config parsing, timestamps, retries, and typing.
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -68,7 +69,33 @@ def _get_widget_or_default(name: str, default_value: str) -> str:
         return default_value
 
 
-def _parse_entities(raw_entities: str) -> List[str]:
+def _load_json_config(config_file_path: str) -> Dict[str, Any]:
+    """Load pipeline JSON config from local/DBFS path. Returns empty dict if missing."""
+    if not config_file_path:
+        return {}
+    try:
+        if config_file_path.startswith("dbfs:/"):
+            raw_text = dbutils.fs.head(config_file_path, 1024 * 1024)
+            return json.loads(raw_text)
+        expanded = os.path.expanduser(config_file_path)
+        if os.path.exists(expanded):
+            with open(expanded, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+    except Exception as exc:
+        logger.warning("Failed to load config file %s; falling back to widgets. Error=%s", config_file_path, exc)
+    return {}
+
+
+def _cfg_value(file_cfg: Dict[str, Any], section: str, key: str, default: Any) -> Any:
+    """Get value with precedence: section -> global -> default."""
+    if section in file_cfg and isinstance(file_cfg[section], dict) and key in file_cfg[section]:
+        return file_cfg[section][key]
+    if "global" in file_cfg and isinstance(file_cfg["global"], dict) and key in file_cfg["global"]:
+        return file_cfg["global"][key]
+    return default
+
+
+def _parse_entities(raw_entities: Any) -> List[str]:
     """
     Parse entities from either JSON list format or comma-separated format.
 
@@ -76,9 +103,14 @@ def _parse_entities(raw_entities: str) -> List[str]:
     - '["customers","items"]'
     - 'customers,items'
     """
-    if not raw_entities:
+    if raw_entities is None:
         return []
-    stripped = raw_entities.strip()
+    if isinstance(raw_entities, list):
+        return [str(x).strip() for x in raw_entities if str(x).strip()]
+    raw_text = str(raw_entities)
+    if not raw_text:
+        return []
+    stripped = raw_text.strip()
     if stripped.startswith("["):
         parsed = json.loads(stripped)
         return [str(x).strip() for x in parsed if str(x).strip()]
@@ -92,27 +124,65 @@ def load_config() -> ExtractConfig:
     Required BC credentials are validated here so failures happen early before
     any network calls or table writes.
     """
-    tenant_id = _get_widget_or_default("bc_tenant_id", "")
-    environment = _get_widget_or_default("bc_environment", "production")
-    company_id = _get_widget_or_default("bc_company_id", "")
-    client_id = _get_widget_or_default("bc_client_id", "")
-    client_secret = _get_widget_or_default("bc_client_secret", "")
-    oauth_scope = _get_widget_or_default(
-        "bc_oauth_scope", "https://api.businesscentral.dynamics.com/.default"
+    config_file_path = _get_widget_or_default(
+        "config_file_path",
+        "config/pipeline_config.json",
     )
-    api_version = _get_widget_or_default("bc_api_version", "v2.0")
-    raw_volume_path = _get_widget_or_default(
-        "raw_volume_path", "/Volumes/main/business_central/bc_raw/raw"
-    )
-    metadata_catalog = _get_widget_or_default("metadata_catalog", "main")
-    metadata_schema = _get_widget_or_default("metadata_schema", "business_central")
+    file_cfg = _load_json_config(config_file_path)
 
-    entities = _parse_entities(_get_widget_or_default("entities", '["customers","items","salesOrders"]'))
-    page_size = int(_get_widget_or_default("page_size", "1000"))
-    request_timeout_seconds = int(_get_widget_or_default("request_timeout_seconds", "60"))
-    max_retries = int(_get_widget_or_default("max_retries", "5"))
-    retry_backoff_seconds = float(_get_widget_or_default("retry_backoff_seconds", "2"))
-    initial_load_start_utc = _get_widget_or_default("initial_load_start_utc", "") or None
+    tenant_id = _get_widget_or_default("bc_tenant_id", str(_cfg_value(file_cfg, "step1_ingest", "bc_tenant_id", "")))
+    environment = _get_widget_or_default(
+        "bc_environment", str(_cfg_value(file_cfg, "step1_ingest", "bc_environment", "production"))
+    )
+    company_id = _get_widget_or_default(
+        "bc_company_id", str(_cfg_value(file_cfg, "step1_ingest", "bc_company_id", ""))
+    )
+    client_id = _get_widget_or_default("bc_client_id", str(_cfg_value(file_cfg, "step1_ingest", "bc_client_id", "")))
+    client_secret = _get_widget_or_default(
+        "bc_client_secret", str(_cfg_value(file_cfg, "step1_ingest", "bc_client_secret", ""))
+    )
+    oauth_scope = _get_widget_or_default(
+        "bc_oauth_scope",
+        str(
+            _cfg_value(
+                file_cfg,
+                "step1_ingest",
+                "bc_oauth_scope",
+                "https://api.businesscentral.dynamics.com/.default",
+            )
+        ),
+    )
+    api_version = _get_widget_or_default(
+        "bc_api_version", str(_cfg_value(file_cfg, "step1_ingest", "bc_api_version", "v2.0"))
+    )
+    raw_volume_path = _get_widget_or_default(
+        "raw_volume_path",
+        str(_cfg_value(file_cfg, "step1_ingest", "raw_volume_path", "/Volumes/main/business_central/bc_raw/raw")),
+    )
+    metadata_catalog = _get_widget_or_default(
+        "metadata_catalog", str(_cfg_value(file_cfg, "step1_ingest", "metadata_catalog", "main"))
+    )
+    metadata_schema = _get_widget_or_default(
+        "metadata_schema", str(_cfg_value(file_cfg, "step1_ingest", "metadata_schema", "business_central"))
+    )
+
+    default_entities = _cfg_value(file_cfg, "step1_ingest", "entities", ["customers", "items", "salesOrders"])
+    entities = _parse_entities(_get_widget_or_default("entities", json.dumps(default_entities)))
+    page_size = int(_get_widget_or_default("page_size", str(_cfg_value(file_cfg, "step1_ingest", "page_size", 1000))))
+    request_timeout_seconds = int(
+        _get_widget_or_default(
+            "request_timeout_seconds", str(_cfg_value(file_cfg, "step1_ingest", "request_timeout_seconds", 60))
+        )
+    )
+    max_retries = int(_get_widget_or_default("max_retries", str(_cfg_value(file_cfg, "step1_ingest", "max_retries", 5))))
+    retry_backoff_seconds = float(
+        _get_widget_or_default(
+            "retry_backoff_seconds", str(_cfg_value(file_cfg, "step1_ingest", "retry_backoff_seconds", 2))
+        )
+    )
+    initial_load_start_utc = _get_widget_or_default(
+        "initial_load_start_utc", str(_cfg_value(file_cfg, "step1_ingest", "initial_load_start_utc", ""))
+    ) or None
 
     required = {
         "bc_tenant_id": tenant_id,

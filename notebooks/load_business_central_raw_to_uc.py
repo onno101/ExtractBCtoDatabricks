@@ -10,10 +10,11 @@
 # Standard library imports for config parsing, table naming, and timestamps.
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from delta.tables import DeltaTable
 from pyspark.sql import DataFrame
@@ -59,6 +60,32 @@ def _get_widget_or_default(name: str, default_value: str) -> str:
         return default_value
 
 
+def _load_json_config(config_file_path: str) -> Dict[str, Any]:
+    """Load pipeline JSON config from local/DBFS path. Returns empty dict if missing."""
+    if not config_file_path:
+        return {}
+    try:
+        if config_file_path.startswith("dbfs:/"):
+            raw_text = dbutils.fs.head(config_file_path, 1024 * 1024)
+            return json.loads(raw_text)
+        expanded = os.path.expanduser(config_file_path)
+        if os.path.exists(expanded):
+            with open(expanded, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+    except Exception as exc:
+        logger.warning("Failed to load config file %s; falling back to widgets. Error=%s", config_file_path, exc)
+    return {}
+
+
+def _cfg_value(file_cfg: Dict[str, Any], section: str, key: str, default: Any) -> Any:
+    """Get value with precedence: section -> global -> default."""
+    if section in file_cfg and isinstance(file_cfg[section], dict) and key in file_cfg[section]:
+        return file_cfg[section][key]
+    if "global" in file_cfg and isinstance(file_cfg["global"], dict) and key in file_cfg["global"]:
+        return file_cfg["global"][key]
+    return default
+
+
 def _parse_primary_key_map(raw: str) -> Dict[str, List[str]]:
     """
     Parse entity->primary_keys mapping from JSON widget.
@@ -80,14 +107,40 @@ def _parse_primary_key_map(raw: str) -> Dict[str, List[str]]:
 
 def load_config() -> LoadConfig:
     """Build LoadConfig from notebook widgets."""
-    target_catalog = _get_widget_or_default("target_catalog", "main")
-    target_schema = _get_widget_or_default("target_schema", "business_central")
-    metadata_catalog = _get_widget_or_default("metadata_catalog", "main")
-    metadata_schema = _get_widget_or_default("metadata_schema", "business_central")
-    source_system_name = _get_widget_or_default("source_system_name", "dynamics365_business_central")
-    run_id_filter = _get_widget_or_default("run_id_filter", "") or None
-    max_runs_per_entity = int(_get_widget_or_default("max_runs_per_entity", "100"))
-    primary_key_map = _parse_primary_key_map(_get_widget_or_default("primary_key_map_json", '{"*":["id"]}'))
+    config_file_path = _get_widget_or_default(
+        "config_file_path",
+        "config/pipeline_config.json",
+    )
+    file_cfg = _load_json_config(config_file_path)
+
+    target_catalog = _get_widget_or_default(
+        "target_catalog", str(_cfg_value(file_cfg, "step2_load", "target_catalog", "main"))
+    )
+    target_schema = _get_widget_or_default(
+        "target_schema", str(_cfg_value(file_cfg, "step2_load", "target_schema", "business_central"))
+    )
+    metadata_catalog = _get_widget_or_default(
+        "metadata_catalog", str(_cfg_value(file_cfg, "step2_load", "metadata_catalog", "main"))
+    )
+    metadata_schema = _get_widget_or_default(
+        "metadata_schema", str(_cfg_value(file_cfg, "step2_load", "metadata_schema", "business_central"))
+    )
+    source_system_name = _get_widget_or_default(
+        "source_system_name",
+        str(_cfg_value(file_cfg, "step2_load", "source_system_name", "dynamics365_business_central")),
+    )
+    run_id_filter = _get_widget_or_default(
+        "run_id_filter", str(_cfg_value(file_cfg, "step2_load", "run_id_filter", ""))
+    ) or None
+    max_runs_per_entity = int(
+        _get_widget_or_default(
+            "max_runs_per_entity", str(_cfg_value(file_cfg, "step2_load", "max_runs_per_entity", 100))
+        )
+    )
+    default_pk_map = _cfg_value(file_cfg, "step2_load", "primary_key_map_json", {"*": ["id"]})
+    primary_key_map = _parse_primary_key_map(
+        _get_widget_or_default("primary_key_map_json", json.dumps(default_pk_map))
+    )
 
     return LoadConfig(
         target_catalog=target_catalog,
