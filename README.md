@@ -25,12 +25,12 @@ Notebook paths:
 
 ```mermaid
 flowchart LR
-    businessCentral["Dynamics365BusinessCentral"] --> step1["AzureDatabricksCompute Step1ExtractNotebook"]
-    step1 --> rawStorage["AzureDataLakeServices RawJsonZone UCVolume"]
+    businessCentral["Dynamics365BusinessCentral"] --> step1["Azure Databricks Ingestion Notebook"]
+    step1 --> rawStorage["Azure Data Lake JSON"]
     step1 --> metadata["UnityCatalogMetadataTables ExtractWatermarkAndManifest"]
-    metadata --> step2["AzureDatabricksCompute Step2TransformLoadNotebook"]
+    metadata --> step2["Azure Databricks Transform Notebook"]
     rawStorage --> step2
-    step2 --> managedTables["UnityCatalogManagedDeltaTables CuratedBusinessCentral"]
+    step2 --> managedTables["Unity Catalog Managed Table CuratedBusinessCentral"]
     step2 --> loadMetadata["UnityCatalogMetadataTables LoadWatermarkAndStatus"]
 ```
 
